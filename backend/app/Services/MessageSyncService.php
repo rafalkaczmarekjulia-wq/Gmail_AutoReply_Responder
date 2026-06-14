@@ -7,6 +7,7 @@ use App\Models\GmailAccount;
 use App\Models\GmailMessage;
 use App\Models\GmailThread;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class MessageSyncService
@@ -33,7 +34,9 @@ class MessageSyncService
             ]
         );
 
-        $thread->update(['notification_state' => 0]);
+        if (Schema::hasColumn('gmail_threads', 'notification_state')) {
+            $thread->update(['notification_state' => 0]);
+        }
 
         $message = GmailMessage::updateOrCreate(
             [

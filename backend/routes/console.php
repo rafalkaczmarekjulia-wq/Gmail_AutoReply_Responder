@@ -2,8 +2,11 @@
 
 use App\Jobs\ProcessGmailHistoryJob;
 use App\Models\GmailAccount;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -49,3 +52,31 @@ Artisan::command('gmail:backfill-drafts {--account= : Gmail account ID}', functi
 
     $this->info("Done. {$total} message(s) processed.");
 })->purpose('Classify and create missing reply drafts');
+
+Artisan::command('db:ensure-notification-state', function () {
+    if (! Schema::hasColumn('gmail_threads', 'notification_state')) {
+        Schema::table('gmail_threads', function (Blueprint $table) {
+            $table->unsignedTinyInteger('notification_state')->default(0)->after('last_message_at');
+        });
+        $this->info('Added notification_state column to gmail_threads.');
+    } else {
+        $this->comment('Column notification_state already exists.');
+    }
+
+    DB::table('gmail_threads')->update(['notification_state' => 1]);
+
+    $pendingThreadIds = DB::table('draft_replies')
+        ->join('gmail_messages', 'draft_replies.gmail_message_id', '=', 'gmail_messages.id')
+        ->where('draft_replies.status', 'pending_approval')
+        ->distinct()
+        ->pluck('gmail_messages.gmail_thread_id');
+
+    if ($pendingThreadIds->isNotEmpty()) {
+        DB::table('gmail_threads')
+            ->whereIn('id', $pendingThreadIds)
+            ->update(['notification_state' => 0]);
+        $this->info('Set notification_state=0 for threads with pending drafts.');
+    }
+
+    $this->info('Done.');
+})->purpose('Add notification_state column and set read/unread defaults');

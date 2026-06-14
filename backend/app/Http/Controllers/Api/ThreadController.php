@@ -12,6 +12,7 @@ use App\Models\GmailThread;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
 
 class ThreadController extends Controller
 {
@@ -100,6 +101,13 @@ class ThreadController extends Controller
         $validated = $request->validate([
             'state' => ['required', 'integer', 'in:0,1'],
         ]);
+
+        if (! Schema::hasColumn('gmail_threads', 'notification_state')) {
+            return response()->json([
+                'message' => 'notification_state column missing. Run: php artisan migrate',
+                'notification_state' => (int) $validated['state'],
+            ], 503);
+        }
 
         $thread->update(['notification_state' => $validated['state']]);
 

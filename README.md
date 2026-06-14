@@ -2,159 +2,138 @@
 
 Connect Gmail, classify inbound mail, generate reply drafts, approve before send.
 
-Repo: `gmail-auto-responder` · Laravel 11 + Next.js 14 + MySQL + Redis
+Repo: `gmail-auto-responder` · Laravel 11 + Next.js 14 · local test uses SQLite (no Docker)
 
-1. Overview
+---
+
+## 1. Overview
 
 Multi-user app. Each person connects one or more Gmail inboxes. Incoming mail gets classified and drafted by AI. Nothing sends until you approve it.
 
-Flow
+**Flow**
 
 1. Register and sign in
 2. Connect Gmail (one Google OAuth app for the whole product; multiple mailboxes per user)
 3. New mail syncs into the DB
 4. Backend classifies it and pulls out keywords
 5. LLM writes a draft from your reply prompt
-6. You open the thread, edit if needed, then Approve & send or Reject
+6. You open the thread, edit if needed, then **Approve & send** or **Reject**
 
-Labels: interested, meeting_request, not_interested, unclear. Custom reply prompt per user. Draft saved in DB and Gmail when the API allows. Each user only sees their own mail.
+Labels: `interested`, `meeting_request`, `not_interested`, `unclear`. Custom reply prompt per user. Draft saved in DB and Gmail when the API allows. Each user only sees their own mail.
 
-2. What works
+---
+
+## 2. What works
 
 Tested on localhost.
 
-UI
+### UI
 
 | Area | What it does |
 |------|----------------|
-| Overview | Account count, mail processed, replies sent, drafts waiting. Connected inboxes and recent activity. |
-| Conversations | Thread list with pages. Filter by status (all / needs review / sent) or inbox. Ctrl+K search. Each row shows sender, subject, and which Gmail received it. |
-| Thread detail | Message and labels on the left, draft on the right. Edit, approve & send, or reject. Status while classify/draft runs. |
-| Mailboxes | Connect / disconnect Gmail. Sync one inbox or all. Status and message count per account. |
-| Notifications | Header bell — draft ready, reply sent. Badge count. Mark all read. |
-| Read / unread | ✕ not seen, ✓ seen. Toggle in the list; opening a thread marks it read. |
-| Settings | Edit reply prompt. See LLM model in use. |
-| Help | Steps to connect Gmail and add another mailbox. |
+| **Overview** | Account count, mail processed, replies sent, drafts waiting. Connected inboxes and recent activity. |
+| **Conversations** | Thread list with pages. Filter by status (all / needs review / sent) or inbox. Ctrl+K search. Each row shows sender, subject, and which Gmail received it. |
+| **Thread detail** | Message and labels on the left, draft on the right. Edit, approve & send, or reject. Status while classify/draft runs. |
+| **Mailboxes** | Connect / disconnect Gmail. Sync one inbox or all. Status and message count per account. |
+| **Notifications** | Header bell — draft ready, reply sent. Badge count. Mark all read. |
+| **Read / unread** | ✕ not seen, ✓ seen. Toggle in the list; opening a thread marks it read. |
+| **Settings** | Edit reply prompt. See LLM model in use. |
+| **Help** | Steps to connect Gmail and add another mailbox. |
 
-Backend
+### Backend
 
 - Register / login (Sanctum bearer token)
 - Gmail OAuth, multiple mailboxes per user
 - Pub/Sub webhook or scheduler poll — same pipeline either way
-- Queues: gmail-sync, ai
-- OpenAI classify + draft (gpt-4o-mini default); keyword stub if API fails
+- Queues: `gmail-sync`, `ai`
+- OpenAI classify + draft (`gpt-4o-mini` default); keyword stub if API fails
 - Thread search, filters, pagination, notifications (unread only)
-- Idempotent sync, token refresh with Redis lock, watch renewal cron
+- Idempotent sync, token refresh lock, watch renewal cron
 
-Local dev: without Pub/Sub + ngrok you run in poll mode — scheduler hits Gmail every minute, Mailboxes page syncs in the background. Fine for testing.
+**Local test:** SQLite + sync queue — no Docker, no Redis, no queue worker window. Scheduler polls Gmail every minute; Mailboxes page also syncs in the background.
 
-3. Run locally
+---
 
-Need: PHP 8.2+, Composer, Node 18+, Docker
+## 3. Run locally (client test on Windows)
 
-Repo layout
+**Need:** PHP 8.2+ (extensions: `pdo_sqlite`, `mbstring`, `openssl`), Composer, Node 18+.
 
-```
-backend/           Laravel API
-frontend/          Next.js dashboard
-docker-compose.yml MySQL 8 + Redis 7
-```
+**Do not need:** Docker, MySQL, Redis, any existing database file, `manual_add_notification_state.sql`, or `fix-migration-encoding.php`.
 
-3.1 Start Docker
+The app creates a **new** SQLite database at `backend/database/database.sqlite` on first setup. Your client starts fresh — no old DB to import.
 
-```bash
-docker compose up -d
+### One-time setup
+
+```cmd
+scripts\local\setup.bat
 ```
 
-3.2 Backend setup
-
-```bash
-cd backend
-cp .env.example .env
-composer install
-php artisan key:generate
-php artisan migrate
-```
-
-Set in backend/.env:
+Then edit `backend\.env` and set:
 
 ```env
-APP_URL=http://localhost:8000
-FRONTEND_URL=http://localhost:3000
-
-DB_CONNECTION=mysql
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_DATABASE=gmail_responder
-DB_USERNAME=gmail
-DB_PASSWORD=secret
-
-QUEUE_CONNECTION=redis
-CACHE_STORE=redis
-REDIS_HOST=127.0.0.1
-REDIS_PORT=6379
-
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GOOGLE_REDIRECT_URI=http://localhost:8000/api/gmail/callback
-GOOGLE_PUBSUB_TOPIC=projects/your-project/topics/gmail-push
-
-LLM_DRIVER=openai
-OPENAI_API_KEY=sk-your-key-here
-OPENAI_MODEL=gpt-4o-mini
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+OPENAI_API_KEY=sk-...
 ```
 
-Google OAuth
+### Google OAuth
 
-1. Google Cloud Console → project → enable Gmail API
-2. OAuth consent screen → External → add test users (required in Testing mode)
-3. Credentials → OAuth client ID → Web application
-4. Redirect URI: http://localhost:8000/api/gmail/callback
-5. Copy Client ID + secret into .env
+1. [Google Cloud Console](https://console.cloud.google.com) → enable **Gmail API**
+2. OAuth consent screen → External → add the Gmail address as a **test user** (Testing mode)
+3. Scopes: `gmail.readonly`, `gmail.compose`, `gmail.modify`
+4. Credentials → OAuth client ID → Web application
+5. Redirect URI: `http://localhost:8000/api/gmail/callback`
+6. Copy Client ID + secret into `backend\.env`
 
-Pub/Sub is optional locally — leave the topic placeholder and polling handles sync.
+Pub/Sub is **not** required locally — the scheduler polls Gmail every minute.
 
-OpenAI key from platform.openai.com — required for real classify/draft.
+### Start the app (3 CMD windows)
 
-3.3 Frontend setup
+```cmd
+scripts\local\start.bat
+```
 
-```bash
-cd frontend
-cp .env.local.example .env.local
+| Window | What it does |
+|--------|----------------|
+| API | `http://localhost:8000` — login, OAuth, API |
+| Scheduler | Polls Gmail every minute |
+| Frontend | `http://localhost:3000` — UI |
+
+`QUEUE_CONNECTION=sync` in `.env.example` means jobs run immediately — **no separate queue worker window**.
+
+You can also click **Sync now** on Mailboxes if you skip the scheduler, but keeping the scheduler open is recommended.
+
+### Smoke test
+
+1. Open http://localhost:3000 → Register
+2. Mailboxes → Connect Gmail
+3. Email yourself from another account
+4. Wait ~60s or click **Sync now**
+5. Conversations → approve draft
+
+If stuck: check all 3 windows are still running → OAuth test user in GCP → `backend\storage\logs\laravel.log`
+
+### Manual setup (optional)
+
+```cmd
+cd backend
+copy .env.example .env
+composer install
+php artisan key:generate
+type nul > database\database.sqlite
+php artisan migrate
+cd ..\frontend
+copy .env.local.example .env.local
 npm install
 ```
 
-```env
-NEXT_PUBLIC_API_URL=http://localhost:8000/api
-```
+Run in separate terminals: `php artisan serve`, `php artisan schedule:work`, `npm run dev` (in `frontend`).
 
-3.4 Run (4 terminals)
+---
 
-```bash
-cd backend && php artisan serve
-cd backend && php artisan schedule:work
-cd backend && php artisan queue:work redis --queue=gmail-sync,ai
-cd frontend && npm run dev
-```
+## 4. How it works
 
-| Process | Why |
-|---------|-----|
-| serve | API + OAuth callback |
-| schedule:work | Poll Gmail + run pending classify/draft |
-| queue:work | Required — without this, drafts never show up |
-| npm run dev | UI at http://localhost:3000 |
-
-3.5 Smoke test
-
-Register → Mailboxes → Connect Gmail → email yourself something like "Interested in a demo, can we meet Tuesday?" → wait ~30–60s or Sync now → Conversations → approve draft.
-
-Stuck? Check queue worker first, then OAuth test user in GCP, then backend/storage/logs/laravel.log.
-
-4. How it works
-
-Tables, sync, queues — one system.
-
-4.1 Tables
+### Tables
 
 ```
 users                   reply_prompt
@@ -166,9 +145,9 @@ draft_replies           body, status
 processed_notifications Pub/Sub dedup (not in UI)
 ```
 
-users → gmail_accounts → gmail_threads → gmail_messages. One classification + one draft per inbound message. Scoped by user_id.
+`users` → `gmail_accounts` → `gmail_threads` → `gmail_messages`. One classification + one draft per inbound message. Scoped by `user_id`.
 
-4.2 Flow
+### Flow
 
 ```mermaid
 flowchart LR
@@ -180,69 +159,73 @@ flowchart LR
   UI[RevReply] -->|approve| Gmail
 ```
 
-Mail arrives → saved to DB → classified → draft written → user approves or rejects.
+### Push vs poll
 
-4.3 Push vs poll
-
-Prod: Pub/Sub set → watch on connect → Gmail POSTs /api/webhooks/gmail/pubsub → job queued.
-
-Local: no Pub/Sub → gmail:poll every minute + UI sync on Mailboxes.
+- **Prod:** Pub/Sub set → watch on connect → Gmail POSTs `/api/webhooks/gmail/pubsub` → job queued
+- **Local:** no Pub/Sub → `gmail:poll` every minute + UI sync on Mailboxes
 
 Same tables and jobs. Different trigger.
 
-4.4 Queues
+### Queues
+
+Local `.env.example` uses `QUEUE_CONNECTION=sync` (jobs run immediately — no worker process).
+
+Production uses Redis queues:
 
 ```bash
 php artisan queue:work redis --queue=gmail-sync,ai
 ```
 
-gmail-sync — fetch mail. ai — classify + draft.
+- `gmail-sync` — fetch mail
+- `ai` — classify + draft
 
-Sync: 5 retries. AI: 3 retries. Failures → failed_jobs.
+Sync: 5 retries. AI: 3 retries. Failures → `failed_jobs`.
 
-Commands: gmail:poll · gmail:renew-watches · gmail:process-pending · gmail:backfill-drafts
+**Commands:** `gmail:poll` · `gmail:renew-watches` · `gmail:process-pending` · `gmail:backfill-drafts`
 
-4.5 When things break
+### When things break
 
 Duplicate webhook → skip. Token revoked → reconnect on Mailboxes. History ID expired → mailbox error. Gmail draft API fails → draft still in DB. OpenAI fails → stub, pipeline continues.
 
-GET /up · logs in backend/storage/logs/laravel.log
+`GET /up` · logs in `backend/storage/logs/laravel.log`
 
-5. Upgrade plan (published version)
+---
+
+## 5. Upgrade plan (published version)
 
 Same foundation in prod: one OAuth app, multi-mailbox, queues, human approval before every send. What changes is ingress, ops, and polish.
 
-5.1 Now vs later
+### Now vs later
 
 | Area | This repo | Published |
 |------|-----------|-----------|
 | Mail ingress | Poll + optional Pub/Sub | Pub/Sub only, no browser sync |
 | Webhook | Payload check | JWT on every request |
 | API | Sanctum | + rate limits |
-| Ops | log file, /up, failed_jobs | Horizon, Sentry, trace IDs, alerts |
+| Ops | log file, `/up`, `failed_jobs` | Horizon, Sentry, trace IDs, alerts |
 | OAuth | Testing mode | Published app, any user |
-| Secrets | .env | Secrets manager |
-| Workers | 4 manual terminals | Supervisor/systemd, auto-restart |
+| Secrets | `.env` | Secrets manager |
+| Workers | 3 CMD windows (local) | Supervisor/systemd, auto-restart |
 | Notifications | In-app bell | + email for reconnect, draft ready |
 | Audit | Draft status in DB | Full log of who approved/edited/rejected |
 
-5.2 Production work
+### Production work
 
 - Webhook acks fast, all Gmail/LLM work in workers
 - Separate worker pools for sync vs AI; scale on queue depth
 - Per-mailbox rate limit + sync lock (one OAuth app = shared Google quota)
 - Auto-resync when history ID expires; circuit-break bad mailboxes
-- Remove sync-all polling from frontend in prod
+- Remove `sync-all` polling from frontend in prod
 - Onboarding flow, reconnect banners, optional mailbox nicknames
 - Load test: ~100 concurrent webhooks, no duplicate drafts
 
-5.3 Launch checklist
+### Launch checklist
 
 - [ ] Google OAuth published (not Testing)
 - [ ] Pub/Sub push + JWT on production URL
-- [ ] Secrets manager, not plain .env on servers
-- [ ] Workers + scheduler auto-restart
-- [ ] Health checks and alerting wired up
-- [ ] php artisan migrate on deploy (includes notification_state)
+- [ ] Secrets manager, not plain `.env` on servers
+- [ ] Workers + scheduler auto-restart (production)
 
-Copy backend/.env.example and frontend/.env.local.example, run the four processes, connect Gmail, open Conversations. Queue worker is the usual culprit when nothing happens.
+---
+
+Copy `.env.example` files, run `scripts\local\setup.bat` then `scripts\local\start.bat`, connect Gmail, open Conversations.

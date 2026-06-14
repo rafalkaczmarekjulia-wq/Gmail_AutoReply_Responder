@@ -7,6 +7,7 @@ use App\Models\GmailMessage;
 use App\Services\GmailService;
 use App\Services\LlmService;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -73,6 +74,8 @@ class GenerateDraftJob implements ShouldQueue
         ]);
 
         $message->load('thread');
-        $message->thread?->update(['notification_state' => 0]);
+        if (Schema::hasColumn('gmail_threads', 'notification_state')) {
+            $message->thread?->update(['notification_state' => 0]);
+        }
     }
 }
