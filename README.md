@@ -34,14 +34,10 @@ gmail-auto-responder/
 ├── backend/              Laravel 11 API
 ├── frontend/             Next.js 14 (App Router, TypeScript)
 ├── docker-compose.yml    MySQL 8 + Redis 7
-├── install.ps1           First-time setup (Windows)
-├── run-backend.bat       migrate + scheduler + API
-├── run-queue.bat         Redis queue worker
-├── run-frontend.bat      Next.js dev server
-└── README.md             ← start here
+└── README.md
 ```
 
-Env files (copy from examples before first run):
+Copy env templates before first run:
 
 - `backend/.env.example` → `backend/.env`
 - `frontend/.env.local.example` → `frontend/.env.local`
@@ -66,18 +62,18 @@ MySQL listens on `3306`, Redis on `6379`. Credentials match `backend/.env.exampl
 
 ### 2. Install dependencies
 
-**Windows (easiest):**
-
-```powershell
-.\install.ps1
-```
-
-**Manual:**
-
 ```bash
-cd backend && cp .env.example .env && php composer.phar install && php artisan key:generate
-cd ../frontend && cp .env.local.example .env.local && npm install
+cd backend
+cp .env.example .env
+composer install
+php artisan key:generate
+
+cd ../frontend
+cp .env.local.example .env.local
+npm install
 ```
+
+If you don't have Composer globally, use `php composer.phar install` from the `backend/` folder (when `composer.phar` is present).
 
 ### 3. Database
 
@@ -95,7 +91,9 @@ You need **one** GCP project with:
 3. **OAuth 2.0 Web client** — redirect URI: `http://localhost:8000/api/gmail/callback`
 4. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `backend/.env`
 
-Pub/Sub is optional for local dev. Without it, polling handles sync. See [Google OAuth: dev vs production](docs/GOOGLE_OAUTH_DEV_VS_PRODUCTION.md).
+Pub/Sub is optional for local dev. Without it, polling handles sync.
+
+For production OAuth, publish the consent screen after Google verification so any user can connect (localhost uses Testing mode + test users).
 
 **Optional — Pub/Sub (push mode):**
 
@@ -125,21 +123,20 @@ If OpenAI fails, the backend falls back to stub so the pipeline doesn't hard-sto
 
 ### 6. Start the app
 
-Open **three** terminals (or use the `.bat` scripts on Windows):
+Open **three** terminals:
 
 ```bash
-# Terminal 1 — API + scheduler (polls every minute when Pub/Sub is off)
-run-backend.bat
-# or: cd backend && php artisan serve
-#     plus: php artisan schedule:work
+# Terminal 1 — API
+cd backend && php artisan serve
 
-# Terminal 2 — queue worker (required for classify + draft jobs)
-run-queue.bat
-# or: cd backend && php artisan queue:work redis --queue=gmail-sync,ai
+# Terminal 1b — scheduler (separate tab; polls when Pub/Sub is off)
+cd backend && php artisan schedule:work
+
+# Terminal 2 — queue worker (required for classify + draft)
+cd backend && php artisan queue:work redis --queue=gmail-sync,ai
 
 # Terminal 3 — frontend
-run-frontend.bat
-# or: cd frontend && npm run dev
+cd frontend && npm run dev
 ```
 
 Open **http://localhost:3000**, register, go to **Mailboxes → Connect Gmail**, send a test email to that inbox, then check **Threads**.
@@ -202,8 +199,6 @@ flowchart TB
 ```
 
 **Design choice I stand behind:** one Google OAuth application for the whole product. I would not create a GCP project or OAuth client per customer. Each connected mailbox is a row in `gmail_accounts` with its own tokens, history cursor, and processing state.
-
-More detail: [docs/PRODUCTION_SCALE.md](docs/PRODUCTION_SCALE.md)
 
 ---
 
@@ -327,7 +322,7 @@ The user sees "Reconnect required" on the Mailboxes page. No silent failure.
 
 - Per-mailbox sync lock (`gmail:sync:{id}`, ~55s) — don't run two history syncs for the same account concurrently
 - Queue backoff on 429/5xx: 10s → 30s → 60s → 120s → 300s
-- In production I'd add a Redis rate limiter per mailbox (e.g. cap Gmail calls/minute) — documented in `docs/PRODUCTION_SCALE.md`, not fully wired in MVP
+- In production I'd add a Redis rate limiter per mailbox (e.g. cap Gmail calls/minute) — not wired in this MVP
 
 **OpenAI:** 30s HTTP timeout; on failure → stub fallback so one bad response doesn't kill the pipeline
 
@@ -465,14 +460,6 @@ None of these block proving the architecture. They're the gap between **working 
 | POST | `/api/drafts/{id}/reject` | Yes | Reject draft |
 | GET | `/api/settings` | Yes | Reply prompt + LLM config |
 | PUT | `/api/settings/reply-prompt` | Yes | Update prompt |
-
----
-
-## Further reading
-
-- [docs/PRODUCTION_SCALE.md](docs/PRODUCTION_SCALE.md) — scale math, queue topology, 1000 users × 10 mailboxes
-- [docs/GOOGLE_OAUTH_DEV_VS_PRODUCTION.md](docs/GOOGLE_OAUTH_DEV_VS_PRODUCTION.md) — Testing vs Published consent screen
-- [docs/USER_GUIDE.md](docs/USER_GUIDE.md) — user-facing walkthrough
 
 ---
 
