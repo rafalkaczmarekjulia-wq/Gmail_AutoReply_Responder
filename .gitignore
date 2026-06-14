@@ -1,0 +1,27 @@
+node_modules/
+vendor/
+.env
+.env.local
+backend/.env
+frontend/.env.local
+backend/storage/logs/*
+backend/storage/framework/cache/*
+backend/storage/framework/sessions/*
+backend/storage/framework/views/*
+!backend/storage/logs/.gitkeep
+!backend/storage/framework/cache/.gitkeep
+!backend/storage/framework/sessions/.gitkeep
+!backend/storage/framework/views/.gitkeep
+backend/bootstrap/cache/*
+!backend/bootstrap/cache/.gitkeep
+frontend/.next/
+*.log
+
+# Docs — README.md is the submission doc; extra docs stay local
+docs/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
